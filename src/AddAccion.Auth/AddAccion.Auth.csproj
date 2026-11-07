@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>AddAccion.Auth</RootNamespace>
+    <AssemblyName>AddAccion.Auth</AssemblyName>
+    <!-- Native AOT: ~20-40 ms cold start and low RSS in containers.
+         AOT/trim analyzers run on every build so regressions are caught early. -->
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+    <!-- Microsoft.Data.SqlClient needs ICU (culture-aware collations). -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- SqlClient still reports trim/AOT analysis warnings for features this
+         service does not use (UDTs, SqlDataAdapter, app.config). The AOT binary
+         is exercised end-to-end by the HTTP test suite (see README). -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+    <UserSecretsId>addaccion-auth-dev</UserSecretsId>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Local development settings never ship in the image. -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\db\migrations\*.sql" LogicalName="migrations/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AddAccion.Auth.Tests" />
+  </ItemGroup>
+
+</Project>

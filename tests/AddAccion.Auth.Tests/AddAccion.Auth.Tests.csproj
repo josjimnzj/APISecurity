@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Test code: relax analyzers that target library/production code. -->
+    <NoWarn>$(NoWarn);xUnit1051;CA1725;CA1707;CA1515;CA1861;CA2000;CA1062;CA1001;CA1849;CA1031;CA5394;CA1859;CA1822;CA2234;CA1054;CA1056;CA1305;CA1307;CA1310;CA1863;CA1860;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Microsoft.Extensions.Identity.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AddAccion.Auth\AddAccion.Auth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\db\examples\user_views.example.sql" Link="sql\user_views.example.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  # Throw-away password of the CI-only SQL Server service container.
+  MSSQL_SA_PASSWORD: "Ci_Only_Passw0rd!2026"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: ${{ env.MSSQL_SA_PASSWORD }}
+        ports: ["1433:1433"]
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b"
+          --health-interval 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build (warnings as errors, NuGet audit)
+        run: dotnet build AddAccion.Auth.slnx -c Release
+
+      - name: Tests (in-memory + SQL Server)
+        env:
+          AUTH_TEST_SQL: "Server=localhost,1433;User ID=sa;Password=${{ env.MSSQL_SA_PASSWORD }};Encrypt=True;TrustServerCertificate=True"
+        run: dotnet test AddAccion.Auth.slnx -c Release --no-build
+
+      - name: Publish Native AOT
+        run: dotnet publish src/AddAccion.Auth/AddAccion.Auth.csproj -c Release -r linux-x64 -o out/aot
+
+      - name: Conformance suite against the Native AOT binary
+        env:
+          CS: "Server=localhost,1433;Database=AddAccionAuthAot;User ID=sa;Password=${{ env.MSSQL_SA_PASSWORD }};Encrypt=True;TrustServerCertificate=True"
+          MASTER: "Server=localhost,1433;User ID=sa;Password=${{ env.MSSQL_SA_PASSWORD }};Encrypt=True;TrustServerCertificate=True"
+        run: |
+          set -euo pipefail
+          docker run --rm --network host mcr.microsoft.com/mssql/server:2022-latest \
+            /opt/mssql-tools18/bin/sqlcmd -C -b -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -Q "CREATE DATABASE AddAccionAuthAot"
+          mkdir -p out/keys
+          out/aot/AddAccion.Auth migrate --ConnectionStrings:AuthDb="$CS"
+          out/aot/AddAccion.Auth generate-key --type ec --out out/keys/ec.pem
+          ConnectionStrings__AuthDb="$CS" Auth__Issuer=http://127.0.0.1:5199 Auth__RequireHttps=false \
+          Auth__SigningKeys__Path=out/keys Auth__Login__CsrfKey="$(openssl rand -base64 32)" \
+          Auth__Login__MaxFailedAttempts=3 Auth__RateLimits__Enabled=false ASPNETCORE_URLS=http://127.0.0.1:5199 \
+            out/aot/AddAccion.Auth > out/aot-server.log 2>&1 &
+          for i in $(seq 1 100); do curl -sf http://127.0.0.1:5199/health/ready && break; sleep 0.2; done
+          AUTH_TEST_BASE_URL=http://127.0.0.1:5199 AUTH_TEST_EXTERNAL_DB="$CS" \
+            dotnet test AddAccion.Auth.slnx -c Release --no-build --filter "FullyQualifiedName~ExternalProtocolTests"
+          ! grep -q '"LogLevel":"Error"' out/aot-server.log
+
+  container:
+    needs: build-test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: addaccion/auth:${{ github.sha }}

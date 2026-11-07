@@ -1,0 +1,15 @@
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+TestResults/
+*.pem
+!tests/**/testdata/*.pem
+secrets/
+deploy/keys/
+appsettings.*.local.json

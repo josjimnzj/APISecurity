@@ -1,0 +1,94 @@
+# AddACCION Auth on Kubernetes (reference). Secrets are created out of band (Key Vault CSI / External Secrets / sealed-secrets):
+#   kubectl create secret generic addaccion-auth-signing-keys --from-file=ec-2026-11.pem --from-file=rsa-2026-11.pem
+#   kubectl create secret generic addaccion-auth-config \
+#     --from-literal=ConnectionStrings__AuthDb='Server=...;Database=AddAccionAuth;Authentication=Active Directory Managed Identity;Encrypt=True' \
+#     --from-literal=Auth__Login__CsrfKey="$(openssl rand -base64 32)"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: addaccion-auth
+  labels: { app: addaccion-auth }
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: addaccion-auth }
+  template:
+    metadata:
+      labels: { app: addaccion-auth }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: auth
+          image: registry.addaccion.com/addaccion/auth:1.0.0   # pin by digest in production
+          ports: [{ name: http, containerPort: 8080 }]
+          envFrom:
+            - secretRef: { name: addaccion-auth-config }
+          env:
+            - { name: Auth__Issuer, value: "https://auth.addaccion.com" }
+            - { name: Auth__SigningKeys__Path, value: "/run/secrets/signing-keys" }
+            - { name: Auth__SigningKeys__ActiveKey, value: "ec-2026-11.pem" }
+            - { name: Auth__Proxy__KnownNetworks__0, value: "10.0.0.0/8" }   # ingress controller pod CIDR
+            - { name: Auth__Cors__AllowedOrigins__0, value: "https://portal.addaccion.com" }
+          volumeMounts:
+            - { name: signing-keys, mountPath: /run/secrets/signing-keys, readOnly: true }
+          resources:
+            requests: { cpu: 100m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 1
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 5
+            timeoutSeconds: 4
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+      volumes:
+        - name: signing-keys
+          secret:
+            secretName: addaccion-auth-signing-keys
+            defaultMode: 0440
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: addaccion-auth
+spec:
+  selector: { app: addaccion-auth }
+  ports: [{ name: http, port: 80, targetPort: http }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: addaccion-auth
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: addaccion-auth }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: addaccion-auth
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: addaccion-auth }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }

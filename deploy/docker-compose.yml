@@ -1,0 +1,53 @@
+# Local environment: SQL Server 2022 + schema migration + AddACCION Auth (Native AOT).
+#   1. ./deploy/dev-setup.sh          (generates signing keys and .env once)
+#   2. docker compose -f deploy/docker-compose.yml --env-file deploy/.env up --build
+#   3. http://localhost:8080/.well-known/openid-configuration
+name: addaccion-auth
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set in deploy/.env}
+    ports: ["1433:1433"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b"]
+      interval: 5s
+      retries: 30
+
+  db-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      sqlserver: { condition: service_healthy }
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    volumes: ["../db:/db:ro"]
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >
+        /opt/mssql-tools18/bin/sqlcmd -C -b -S sqlserver -U sa -P "$$MSSQL_SA_PASSWORD" -Q "IF DB_ID('AddAccionAuth') IS NULL CREATE DATABASE AddAccionAuth" &&
+        /opt/mssql-tools18/bin/sqlcmd -C -b -S sqlserver -U sa -P "$$MSSQL_SA_PASSWORD" -d AddAccionAuth -i /db/migrations/0001_auth_schema.sql &&
+        /opt/mssql-tools18/bin/sqlcmd -C -b -S sqlserver -U sa -P "$$MSSQL_SA_PASSWORD" -d AddAccionAuth -i /db/examples/user_views.example.sql
+    restart: "no"
+
+  auth:
+    build: { context: .., dockerfile: Dockerfile }
+    image: addaccion/auth:dev
+    depends_on:
+      db-init: { condition: service_completed_successfully }
+    ports: ["8080:8080"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      ConnectionStrings__AuthDb: "Server=sqlserver,1433;Database=AddAccionAuth;User ID=sa;Password=${MSSQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True"
+      Auth__Issuer: "http://localhost:8080"
+      Auth__RequireHttps: "false"
+      Auth__SigningKeys__Path: "/run/secrets/signing-keys"
+      Auth__SigningKeys__ActiveKey: "ec-signing.pem"
+      Auth__Login__CsrfKey: ${AUTH_CSRF_KEY:?set in deploy/.env}
+    volumes:
+      - ./keys:/run/secrets/signing-keys:ro
+    healthcheck:
+      disable: true # chiseled image has no shell/curl; probe from the orchestrator (see kubernetes manifest)
