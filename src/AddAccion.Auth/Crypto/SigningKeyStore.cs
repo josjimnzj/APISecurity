@@ -45,6 +45,9 @@ public sealed class SigningKeyStore
         var keys = new List<SigningKey>();
         activeIndex = 0;
 
+        var inline = options.Inline.Where(k => !string.IsNullOrWhiteSpace(k)).ToArray();
+        if (inline.Length > 0) return LoadInline(inline, options.ActiveKey, logger, out activeIndex);
+
         if (string.IsNullOrWhiteSpace(options.Path))
         {
             if (!(environment.IsDevelopment() && options.AllowEphemeralDevelopmentKey))
@@ -83,6 +86,40 @@ public sealed class SigningKeyStore
         if (keys.Select(k => k.KeyId).Distinct(StringComparer.Ordinal).Count() != keys.Count)
             throw new InvalidOperationException("Duplicate signing keys (same thumbprint) found.");
         return keys;
+    }
+
+    private static List<SigningKey> LoadInline(string[] values, string? activeKey, ILogger logger, out int activeIndex)
+    {
+        var active = string.IsNullOrWhiteSpace(activeKey) ? "inline-0" : activeKey;
+        var keys = new List<SigningKey>();
+        activeIndex = -1;
+        for (var i = 0; i < values.Length; i++)
+        {
+            var name = "inline-" + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var key = FromPem(DecodeInline(values[i], name), name);
+            if (string.Equals(name, active, StringComparison.Ordinal)) activeIndex = keys.Count;
+            keys.Add(key);
+            Log.SigningKeyLoaded(logger, name, key.KeyId, key.Algorithm);
+        }
+        if (activeIndex < 0)
+            throw new InvalidOperationException($"Active signing key '{active}' not found among Auth:SigningKeys:Inline (expected inline-0..inline-{values.Length - 1}).");
+        if (keys.Select(k => k.KeyId).Distinct(StringComparer.Ordinal).Count() != keys.Count)
+            throw new InvalidOperationException("Duplicate signing keys (same thumbprint) found.");
+        return keys;
+    }
+
+    /// <summary>Accepts the PEM itself or base64 of the PEM (single line, safe for any environment-variable editor).</summary>
+    internal static string DecodeInline(string value, string name)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("-----BEGIN", StringComparison.Ordinal)) return trimmed.Replace("\\n", "\n", StringComparison.Ordinal);
+        var buffer = new byte[trimmed.Length];
+        if (!Convert.TryFromBase64String(trimmed, buffer, out var written))
+            throw new InvalidOperationException($"{name}: value is neither PEM nor base64-encoded PEM.");
+        var pem = System.Text.Encoding.UTF8.GetString(buffer, 0, written);
+        if (!pem.Contains("-----BEGIN", StringComparison.Ordinal))
+            throw new InvalidOperationException($"{name}: base64 value does not contain a PEM key.");
+        return pem;
     }
 
     public static SigningKey FromPem(string pem, string source = "pem")

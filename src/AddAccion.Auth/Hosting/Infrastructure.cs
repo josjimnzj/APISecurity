@@ -77,8 +77,8 @@ internal static partial class Log
     [LoggerMessage(1001, LogLevel.Information, "Token issued grant={GrantType} client={ClientId} sub={Subject} jti={Jti}")]
     public static partial void TokenIssued(ILogger logger, string grantType, string clientId, string subject, string jti);
 
-    [LoggerMessage(1002, LogLevel.Warning, "Client authentication failed method={Method} reason={Reason}")]
-    public static partial void ClientAuthFailed(ILogger logger, string method, string reason);
+    [LoggerMessage(1002, LogLevel.Warning, "Client authentication failed method={Method} reason={Reason} ip={ClientIp}")]
+    public static partial void ClientAuthFailed(ILogger logger, string method, string reason, string clientIp);
 
     [LoggerMessage(1003, LogLevel.Warning, "Authorization code replay detected client={ClientId}; issued tokens revoked")]
     public static partial void CodeReplay(ILogger logger, string clientId);
@@ -89,14 +89,14 @@ internal static partial class Log
     [LoggerMessage(1005, LogLevel.Information, "Token revoked type={TokenType} client={ClientId}")]
     public static partial void TokenRevoked(ILogger logger, string tokenType, string clientId);
 
-    [LoggerMessage(2001, LogLevel.Information, "Login succeeded sub={Subject} client={ClientId}")]
-    public static partial void LoginSucceeded(ILogger logger, string subject, string clientId);
+    [LoggerMessage(2001, LogLevel.Information, "Login succeeded sub={Subject} client={ClientId} ip={ClientIp}")]
+    public static partial void LoginSucceeded(ILogger logger, string subject, string clientId, string clientIp);
 
-    [LoggerMessage(2002, LogLevel.Warning, "Login failed sub={Subject} reason={Reason}")]
-    public static partial void LoginFailed(ILogger logger, string subject, string reason);
+    [LoggerMessage(2002, LogLevel.Warning, "Login failed sub={Subject} reason={Reason} ip={ClientIp}")]
+    public static partial void LoginFailed(ILogger logger, string subject, string reason, string clientIp);
 
-    [LoggerMessage(2003, LogLevel.Warning, "Login failed for unknown login fingerprint={Fingerprint}")]
-    public static partial void LoginFailedUnknownUser(ILogger logger, string fingerprint);
+    [LoggerMessage(2003, LogLevel.Warning, "Login failed for unknown login fingerprint={Fingerprint} ip={ClientIp}")]
+    public static partial void LoginFailedUnknownUser(ILogger logger, string fingerprint, string clientIp);
 
     [LoggerMessage(2004, LogLevel.Warning, "User {Subject} has a weak password hash (legacy format or low iteration count); rehash it in the user store")]
     public static partial void WeakPasswordHash(ILogger logger, string subject);

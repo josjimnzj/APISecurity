@@ -304,7 +304,8 @@ public sealed class SqlServerFixture : AuthServerFixture
 
 /// <summary>
 /// Black-box run against an already running server (e.g. the Native AOT container or a Go port).
-/// AUTH_TEST_BASE_URL = server URL; AUTH_TEST_EXTERNAL_DB = connection string of the database it uses.
+/// AUTH_TEST_BASE_URL = server URL; AUTH_TEST_EXTERNAL_DB = connection string of the database it uses;
+/// AUTH_TEST_FORWARDED_PROTO=https when the server sits behind a TLS-terminating proxy it trusts.
 /// The server must run with Auth:Login:MaxFailedAttempts=3 and rate limiting disabled.
 /// </summary>
 public sealed class ExternalFixture : AuthServerFixture
@@ -326,8 +327,14 @@ public sealed class ExternalFixture : AuthServerFixture
         _issuer = doc.RootElement.GetProperty("issuer").GetString()!;
     }
 
-    public override HttpClient CreateClient() =>
-        new(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false }) { BaseAddress = new Uri(_baseUrl!) };
+    public override HttpClient CreateClient()
+    {
+        var client = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false }) { BaseAddress = new Uri(_baseUrl!) };
+        // Simulates a TLS-terminating platform proxy (e.g. Render) in front of a server with RequireHttps=true.
+        if (Environment.GetEnvironmentVariable("AUTH_TEST_FORWARDED_PROTO") is { Length: > 0 } proto)
+            client.DefaultRequestHeaders.Add("X-Forwarded-Proto", proto);
+        return client;
+    }
 
     public override Task SeedClientAsync(ClientApplication client) => SqlSeeder.SeedClientAsync(_cs!, client);
     public override Task SeedUserAsync(UserSeed user) => SqlSeeder.SeedUserAsync(_cs!, user);

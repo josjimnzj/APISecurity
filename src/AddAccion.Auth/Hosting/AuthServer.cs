@@ -23,6 +23,13 @@ public static class AuthServer
     {
         var builder = WebApplication.CreateSlimBuilder(args);
         builder.WebHost.UseKestrelHttpsConfiguration();
+        // PaaS convention (Render, Cloud Run, Heroku, Railway): listen on 0.0.0.0:$PORT. Render has no IPv6.
+        if (Environment.GetEnvironmentVariable("PORT") is { Length: > 0 } port)
+        {
+            if (!ushort.TryParse(port, System.Globalization.CultureInfo.InvariantCulture, out var p) || p == 0)
+                throw new InvalidOperationException($"PORT '{port}' is not a valid TCP port.");
+            builder.WebHost.UseUrls($"http://0.0.0.0:{p}");
+        }
         ConfigureServices(builder);
         var app = builder.Build();
         ConfigurePipeline(app);
@@ -111,6 +118,13 @@ public static class AuthServer
             o.ForwardLimit = 2;
             foreach (var network in auth.Proxy.KnownNetworks) o.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(network));
             foreach (var proxy in auth.Proxy.KnownProxies) o.KnownProxies.Add(IPAddress.Parse(proxy));
+            if (auth.Proxy.TrustAllProxies)
+            {
+                // Peer is always the platform load balancer: honour only the hop it appended.
+                o.KnownIPNetworks.Clear();
+                o.KnownProxies.Clear();
+                o.ForwardLimit = 1;
+            }
         });
 
         services.AddCors(o =>
@@ -142,7 +156,7 @@ public static class AuthServer
 
             RateLimitPartition<string> TokenBucket(HttpContext http) => !limits.Enabled
                 ? RateLimitPartition.GetNoLimiter("off")
-                : RateLimitPartition.GetTokenBucketLimiter(ClientIp(http), _ => new TokenBucketRateLimiterOptions
+                : RateLimitPartition.GetTokenBucketLimiter(ClientAddress.Resolve(http), _ => new TokenBucketRateLimiterOptions
                 {
                     TokenLimit = Math.Max(1, limits.TokenBurst),
                     TokensPerPeriod = Math.Max(1, limits.TokenPerSecond),
@@ -153,7 +167,7 @@ public static class AuthServer
 
             o.AddPolicy("token", TokenBucket);
             o.AddPolicy("authorize", http => limits.Enabled && HttpMethods.IsPost(http.Request.Method)
-                ? RateLimitPartition.GetFixedWindowLimiter("login:" + ClientIp(http), _ => new FixedWindowRateLimiterOptions
+                ? RateLimitPartition.GetFixedWindowLimiter("login:" + ClientAddress.Resolve(http), _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = Math.Max(1, limits.LoginPermitsPerWindow),
                     Window = TimeSpan.FromSeconds(Math.Max(1, limits.LoginWindowSeconds)),
@@ -164,7 +178,6 @@ public static class AuthServer
         });
     }
 
-    private static string ClientIp(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     public static void ConfigurePipeline(WebApplication app)
     {

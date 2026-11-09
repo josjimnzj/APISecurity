@@ -101,8 +101,8 @@ public sealed class AuthorizeEndpoint(
         if (user is null || !user.IsActive || locked)
         {
             metrics.LoginFailed(user is null ? "unknown_user" : locked ? "locked" : "inactive");
-            if (user is null) Log.LoginFailedUnknownUser(logger, LogRedaction.Fingerprint(login));
-            else Log.LoginFailed(logger, user.UserId, locked ? "locked" : "inactive");
+            if (user is null) Log.LoginFailedUnknownUser(logger, LogRedaction.Fingerprint(login), ClientAddress.Resolve(ctx));
+            else Log.LoginFailed(logger, user.UserId, locked ? "locked" : "inactive", ClientAddress.Resolve(ctx));
             return LoginForm(ctx, request!, p, login, LoginPage.InvalidCredentials, StatusCodes.Status400BadRequest);
         }
 
@@ -111,7 +111,7 @@ public sealed class AuthorizeEndpoint(
             var lockoutEnd = await users.RecordFailedLoginAsync(user.UserId, now, _options.Login.MaxFailedAttempts,
                 TimeSpan.FromSeconds(_options.Login.LockoutSeconds), ct).ConfigureAwait(false);
             metrics.LoginFailed("bad_password");
-            Log.LoginFailed(logger, user.UserId, lockoutEnd is null ? "bad_password" : "bad_password_now_locked");
+            Log.LoginFailed(logger, user.UserId, lockoutEnd is null ? "bad_password" : "bad_password_now_locked", ClientAddress.Resolve(ctx));
             return LoginForm(ctx, request!, p, login, LoginPage.InvalidCredentials, StatusCodes.Status400BadRequest);
         }
         if (check == PasswordCheck.SuccessWeakHash) Log.WeakPasswordHash(logger, user.UserId);
@@ -134,7 +134,7 @@ public sealed class AuthorizeEndpoint(
         }, ct).ConfigureAwait(false);
 
         metrics.LoginSucceeded();
-        Log.LoginSucceeded(logger, user.UserId, request.Client.ClientId);
+        Log.LoginSucceeded(logger, user.UserId, request.Client.ClientId, ClientAddress.Resolve(ctx));
 
         OAuthResults.NoStore(ctx);
         // 303 so the browser follows with GET (the password must never be re-posted).

@@ -10,8 +10,9 @@ Todo se configura con variables de entorno (`__` como separador) o `appsettings.
 | `ConnectionStrings__AuthDbMigrations` | = AuthDb | Conexión con permisos DDL solo para `migrate` |
 | `Auth__Issuer` | — | URL pública exacta, https, sin `/` final. Aparece en `iss` de todos los tokens: **no cambiar** una vez en producción |
 | `Auth__RequireHttps` | `true` | Rechaza HTTP (tras `X-Forwarded-Proto`). Health exento |
-| `Auth__SigningKeys__Path` | — | Directorio con `*.pem` |
-| `Auth__SigningKeys__ActiveKey` | único fichero | Nombre del fichero que firma |
+| `Auth__SigningKeys__Path` | — | Directorio con `*.pem` (Kubernetes, Docker) |
+| `Auth__SigningKeys__Inline__N` | — | Alternativa a `Path` para PaaS: PEM o base64 del PEM en variables de entorno; claves `inline-0`, `inline-1`… |
+| `Auth__SigningKeys__ActiveKey` | único fichero / `inline-0` | Fichero o `inline-N` que firma |
 | `Auth__Login__CsrfKey` | — | Base64 de ≥ 32 bytes, igual en todas las réplicas (`openssl rand -base64 32`) |
 | `Auth__Login__MaxFailedAttempts` / `LockoutSeconds` | 5 / 900 | Bloqueo de cuenta |
 | `Auth__Login__MaxConcurrentPasswordVerifications` | nº CPUs | Límite de PBKDF2 concurrentes |
@@ -23,6 +24,9 @@ Todo se configura con variables de entorno (`__` como separador) o `appsettings.
 | `Auth__RateLimits__*` | 100 ráfaga / 50 por s; login 10/min | Por IP y réplica |
 | `Auth__Cors__AllowedOrigins__N` | — | Orígenes exactos de SPAs |
 | `Auth__Proxy__KnownNetworks__N` / `KnownProxies__N` | — | Proxies cuyo `X-Forwarded-*` se acepta |
+| `Auth__Proxy__TrustAllProxies` | `false` | Acepta `X-Forwarded-*` de cualquier origen (último salto). Solo si el contenedor únicamente es accesible a través del balanceador de la plataforma (Render, Cloud Run) |
+| `Auth__Proxy__ClientIpHeader` | — | Cabecera con la IP real puesta por el edge (`CF-Connecting-IP` en Render) para rate limit y logs |
+| `PORT` | — | Si existe, escucha en `http://0.0.0.0:$PORT` (convención PaaS) |
 | `Auth__Proxy__PathBase` | — | Si el issuer tiene ruta (`https://api.addaccion.com/auth` → `/auth`) |
 | `Auth__Users__UseVarcharParameters` | `false` | Ver [usuarios](usuarios-sql-server.md) |
 | `Auth__Cleanup__IntervalSeconds` | 900 | Limpieza de filas caducadas |

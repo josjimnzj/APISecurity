@@ -23,8 +23,14 @@ internal sealed class AuthServerOptionsValidator(IHostEnvironment environment) :
                 errors.Add("Auth:Issuer must use https when Auth:RequireHttps is true.");
         }
 
-        if (string.IsNullOrWhiteSpace(options.SigningKeys.Path) && !(isDev && options.SigningKeys.AllowEphemeralDevelopmentKey))
-            errors.Add("Auth:SigningKeys:Path is required (ephemeral keys are only allowed in Development).");
+        var hasPath = !string.IsNullOrWhiteSpace(options.SigningKeys.Path);
+        var hasInline = options.SigningKeys.Inline.Any(k => !string.IsNullOrWhiteSpace(k));
+        if (hasPath && hasInline)
+            errors.Add("Use either Auth:SigningKeys:Path or Auth:SigningKeys:Inline, not both.");
+        if (!hasPath && !hasInline && !(isDev && options.SigningKeys.AllowEphemeralDevelopmentKey))
+            errors.Add("Auth:SigningKeys:Path or Auth:SigningKeys:Inline is required (ephemeral keys are only allowed in Development).");
+        if (options.Proxy.ClientIpHeader is { Length: > 0 } header && (header.Length > 64 || header.Any(c => !(char.IsAsciiLetterOrDigit(c) || c == '-'))))
+            errors.Add("Auth:Proxy:ClientIpHeader must be a header name.");
 
         if (string.IsNullOrWhiteSpace(options.Login.CsrfKey))
         {

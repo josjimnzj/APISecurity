@@ -35,6 +35,7 @@ public sealed class ClientAuthenticator(
 
     public async Task<ClientAuthResult> AuthenticateAsync(HttpContext ctx, RequestParameters p, string endpointUrl, CancellationToken ct)
     {
+        var ip = ClientAddress.Resolve(ctx);
         var authorization = ctx.Request.Headers.Authorization;
         if (authorization.Count > 1)
             return ClientAuthResult.Fail(OAuthErrors.InvalidRequest, "Multiple Authorization headers.");
@@ -61,14 +62,14 @@ public sealed class ClientAuthenticator(
         {
             if (formClientId is not null && !string.Equals(formClientId, basicId, StringComparison.Ordinal))
                 return ClientAuthResult.Fail(OAuthErrors.InvalidRequest, "client_id does not match the authenticated client.", basic: true);
-            return await AuthenticateSecretAsync(basicId!, basicSecret!, ClientAuthMethods.SecretBasic, basic: true, ct).ConfigureAwait(false);
+            return await AuthenticateSecretAsync(basicId!, basicSecret!, ClientAuthMethods.SecretBasic, basic: true, ip, ct).ConfigureAwait(false);
         }
 
         if (postSecret is not null)
         {
             if (formClientId is null)
                 return ClientAuthResult.Fail(OAuthErrors.InvalidClient, "client_id is required.");
-            return await AuthenticateSecretAsync(formClientId, postSecret, ClientAuthMethods.SecretPost, basic: false, ct).ConfigureAwait(false);
+            return await AuthenticateSecretAsync(formClientId, postSecret, ClientAuthMethods.SecretPost, basic: false, ip, ct).ConfigureAwait(false);
         }
 
         if (assertion is not null || assertionType is not null)
@@ -78,7 +79,7 @@ public sealed class ClientAuthenticator(
             var result = await assertions.ValidateAsync(assertion, endpointUrl, ct).ConfigureAwait(false);
             if (result.Succeeded && formClientId is not null && !string.Equals(formClientId, result.Client!.ClientId, StringComparison.Ordinal))
                 return ClientAuthResult.Fail(OAuthErrors.InvalidClient, "client_id does not match the client assertion.");
-            if (!result.Succeeded) Log.ClientAuthFailed(logger, "private_key_jwt", result.Description ?? "");
+            if (!result.Succeeded) Log.ClientAuthFailed(logger, "private_key_jwt", result.Description ?? "", ip);
             return result;
         }
 
@@ -88,18 +89,18 @@ public sealed class ClientAuthenticator(
         var client = await clients.FindAsync(formClientId, ct).ConfigureAwait(false);
         if (client is null || !client.IsEnabled || client.IsConfidential || client.TokenEndpointAuthMethod != ClientAuthMethods.None)
         {
-            Log.ClientAuthFailed(logger, "none", "unknown, disabled or confidential client");
+            Log.ClientAuthFailed(logger, "none", "unknown, disabled or confidential client", ip);
             return ClientAuthResult.Fail(OAuthErrors.InvalidClient, "Client authentication failed.");
         }
         return new ClientAuthResult(client, null, null, false, ClientAuthMethods.None);
     }
 
-    private async Task<ClientAuthResult> AuthenticateSecretAsync(string clientId, string secret, string method, bool basic, CancellationToken ct)
+    private async Task<ClientAuthResult> AuthenticateSecretAsync(string clientId, string secret, string method, bool basic, string ip, CancellationToken ct)
     {
         var client = await clients.FindAsync(clientId, ct).ConfigureAwait(false);
         if (client is null || !client.IsEnabled || client.TokenEndpointAuthMethod != method || secret.Length > 256)
         {
-            Log.ClientAuthFailed(logger, method, "unknown, disabled client or method not registered");
+            Log.ClientAuthFailed(logger, method, "unknown, disabled client or method not registered", ip);
             return ClientAuthResult.Fail(OAuthErrors.InvalidClient, "Client authentication failed.", basic);
         }
 
@@ -118,7 +119,7 @@ public sealed class ClientAuthenticator(
 
         if (!ok)
         {
-            Log.ClientAuthFailed(logger, method, "invalid secret for " + client.ClientId);
+            Log.ClientAuthFailed(logger, method, "invalid secret for " + client.ClientId, ip);
             return ClientAuthResult.Fail(OAuthErrors.InvalidClient, "Client authentication failed.", basic);
         }
         return new ClientAuthResult(client, null, null, basic, method);

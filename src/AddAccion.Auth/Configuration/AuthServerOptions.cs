@@ -27,7 +27,14 @@ public sealed class SigningKeyOptions
     /// <summary>Directory with PKCS#8 PEM private keys (RSA >= 2048 or EC P-256/P-384/P-521). Mounted as a secret.</summary>
     public string? Path { get; set; }
 
-    /// <summary>File name (inside <see cref="Path"/>) of the key used to sign. Other keys are published for validation only.</summary>
+    /// <summary>
+    /// Keys supplied inline (environment variables / platform secrets) instead of files, each as PEM or base64 of the PEM.
+    /// Named "inline-0", "inline-1"…; "inline-0" signs unless <see cref="ActiveKey"/> says otherwise.
+    /// Used on platforms without reliable secret volumes (e.g. Render). Mutually exclusive with <see cref="Path"/>.
+    /// </summary>
+    public string[] Inline { get; set; } = [];
+
+    /// <summary>File name (inside <see cref="Path"/>) or "inline-N" of the key used to sign. Other keys are published for validation only.</summary>
     public string? ActiveKey { get; set; }
 
     /// <summary>Development only: generate an ephemeral in-memory key when no key directory is configured.</summary>
@@ -91,6 +98,18 @@ public sealed class ProxyOptions
     /// <summary>CIDR networks of trusted reverse proxies / ingress controllers whose X-Forwarded-* headers are honoured.</summary>
     public string[] KnownNetworks { get; set; } = [];
     public string[] KnownProxies { get; set; } = [];
+
+    /// <summary>
+    /// Accept X-Forwarded-Proto/For from any peer. Only for platforms where the container is reachable exclusively
+    /// through the platform load balancer (Render, Cloud Run, App Service). Only the last hop is used.
+    /// </summary>
+    public bool TrustAllProxies { get; set; }
+
+    /// <summary>
+    /// Header carrying the real client IP set by the edge (e.g. "CF-Connecting-IP" behind Cloudflare/Render).
+    /// Used for per-IP rate limiting and audit logs. Only safe when the edge always overwrites it.
+    /// </summary>
+    public string? ClientIpHeader { get; set; }
     /// <summary>Optional path prefix when the issuer contains a path (e.g. /auth).</summary>
     public string? PathBase { get; set; }
 }

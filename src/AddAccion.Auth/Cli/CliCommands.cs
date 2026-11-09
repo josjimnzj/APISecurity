@@ -55,6 +55,7 @@ public static partial class CliCommands
             AddAccion.Auth commands:
               migrate                                    apply db/migrations (ConnectionStrings:AuthDbMigrations or AuthDb)
               generate-key --type rsa|ec --out <file>    write a new PKCS#8 PEM signing key
+              generate-key --type rsa|ec --base64        print it as single-line base64 (for Auth__SigningKeys__Inline__N)
               add-scope --name <scope> --audience <aud> [--description <text>]
               create-client --id <id> --name <name> --grants <g1,g2> --scopes <s1,s2>
                             [--type confidential|public] [--auth client_secret_basic|client_secret_post|private_key_jwt|none]
@@ -145,6 +146,15 @@ public static partial class CliCommands
     private static int GenerateKey(Dictionary<string, string> o)
     {
         var type = o.GetValueOrDefault("type", "rsa");
+        if (o.ContainsKey("base64"))
+        {
+            // For platforms where keys live in environment variables (Auth__SigningKeys__Inline__N).
+            var generated = SigningKeyStore.GeneratePem(type);
+            var info = SigningKeyStore.FromPem(generated, "generated");
+            Console.WriteLine(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(generated)));
+            Console.Error.WriteLine($"kid={info.KeyId} alg={info.Algorithm} (stdout holds the PRIVATE key: paste it into the secret store, do not keep it)");
+            return 0;
+        }
         var output = Required(o, "out");
         if (File.Exists(output)) throw new IOException($"'{output}' already exists; refusing to overwrite a key.");
         var pem = SigningKeyStore.GeneratePem(type);

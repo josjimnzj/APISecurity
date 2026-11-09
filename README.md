@@ -42,6 +42,10 @@ Fuera de alcance en v1 (ver [docs/arquitectura.md](docs/arquitectura.md#hoja-de-
 | POST/GET/DELETE | `/admin/v1/clients…` | Gestión de clientes (scope `auth.admin`) |
 | GET | `/health/live` · `/health/ready` | Probes (ready comprueba BD y vistas de usuarios) |
 
+## Despliegue en Render
+
+`render.yaml` (Blueprint) + `Dockerfile`. Variables obligatorias: `ConnectionStrings__AuthDb`, `Auth__Issuer`, `Auth__SigningKeys__Inline__0` (clave de `generate-key --type ec --base64`), `Auth__Login__CsrfKey` (generada por Render), `Auth__Proxy__TrustAllProxies=true`, `Auth__Proxy__ClientIpHeader=CF-Connecting-IP`. Guía completa: [docs/despliegue-render.md](docs/despliegue-render.md).
+
 ## Puesta en marcha local
 
 Requisitos: Docker, `openssl`.
@@ -103,6 +107,7 @@ Si la API necesita enterarse de revocaciones antes de que caduque el token (10 m
 |---|---|
 | `migrate` | Aplica `db/migrations` (usa `ConnectionStrings:AuthDbMigrations` si existe: identidad con permisos DDL separada) |
 | `generate-key --type ec\|rsa --out f.pem` | Genera clave de firma PKCS#8 (permisos 0600) |
+| `generate-key --type ec\|rsa --base64` | La imprime en base64 de una línea para `Auth__SigningKeys__Inline__N` (PaaS) |
 | `add-scope --name --audience [--description]` | Alta/actualización de scope de API |
 | `create-client …` | Alta de cliente con las mismas validaciones que la API de administración |
 
@@ -138,5 +143,6 @@ La suite de protocolo solo usa HTTP: es el contrato de conformidad que cualquier
 - [Controles OWASP / OAuth BCP](docs/seguridad-owasp.md)
 - [Usuarios en SQL Server: contrato de vistas](docs/usuarios-sql-server.md)
 - [Operación: claves, secretos, despliegue, monitorización](docs/operacion.md)
+- [Despliegue en Render](docs/despliegue-render.md)
 - [Integración con APIs, gateways e IAM](docs/integracion.md)
 - [Migración a Go: análisis y contrato](docs/migracion-go.md)

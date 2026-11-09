@@ -239,3 +239,69 @@ public sealed class OptionsValidationTests
         Assert.True(result.Failed);
     }
 }
+
+public sealed class PlatformDeploymentTests
+{
+    private sealed class Env(string name) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = name;
+        public string ApplicationName { get; set; } = "test";
+        public string ContentRootPath { get; set; } = "/";
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = null!;
+    }
+
+    private static SigningKeyStore Store(string[] inline, string? active = null) => new(
+        Options.Create(new AuthServerOptions { SigningKeys = new SigningKeyOptions { Inline = inline, ActiveKey = active } }),
+        new Env("Production"),
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<SigningKeyStore>.Instance);
+
+    [Fact]
+    public void Inline_keys_accept_pem_base64_and_escaped_newlines()
+    {
+        var ec = SigningKeyStore.GeneratePem("ec");
+        var rsa = SigningKeyStore.GeneratePem("rsa");
+        var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(ec));
+        var escaped = rsa.Replace("\n", "\\n", StringComparison.Ordinal);
+
+        var store = Store([b64, escaped]);
+        Assert.Equal(2, store.All.Count);
+        Assert.Equal(SecurityAlgorithms.EcdsaSha256, store.Active.Algorithm);
+
+        var second = Store([b64, rsa], active: "inline-1");
+        Assert.Equal(SecurityAlgorithms.RsaSha256, second.Active.Algorithm);
+        Assert.Equal(store.All[0].KeyId, second.All[0].KeyId); // same key -> same kid whatever the encoding
+
+        Assert.Throws<InvalidOperationException>(() => Store(["not-a-key"]));
+        Assert.Throws<InvalidOperationException>(() => Store([b64], active: "inline-3"));
+    }
+
+    [Fact]
+    public void Path_and_inline_keys_are_mutually_exclusive()
+    {
+        var validator = new AuthServerOptionsValidator(new Env("Production"));
+        AuthServerOptions Options(SigningKeyOptions keys) => new()
+        {
+            Issuer = "https://auth.addaccion.com",
+            SigningKeys = keys,
+            Login = new LoginOptions { CsrfKey = Convert.ToBase64String(new byte[32]) },
+        };
+        Assert.True(validator.Validate(null, Options(new SigningKeyOptions { Inline = ["x"] })).Succeeded);
+        Assert.True(validator.Validate(null, Options(new SigningKeyOptions { Path = "/k", Inline = ["x"] })).Failed);
+    }
+
+    [Fact]
+    public void Client_ip_header_is_used_only_when_it_holds_a_single_valid_ip()
+    {
+        var ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        ctx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("10.1.2.3");
+
+        Assert.Equal("10.1.2.3", AddAccion.Auth.Hosting.ClientAddress.Resolve(ctx, "CF-Connecting-IP"));
+        ctx.Request.Headers["CF-Connecting-IP"] = "203.0.113.7";
+        Assert.Equal("203.0.113.7", AddAccion.Auth.Hosting.ClientAddress.Resolve(ctx, "CF-Connecting-IP"));
+        Assert.Equal("10.1.2.3", AddAccion.Auth.Hosting.ClientAddress.Resolve(ctx, null));
+        ctx.Request.Headers["CF-Connecting-IP"] = "203.0.113.7, 198.51.100.1";
+        Assert.Equal("10.1.2.3", AddAccion.Auth.Hosting.ClientAddress.Resolve(ctx, "CF-Connecting-IP"));
+        ctx.Request.Headers["CF-Connecting-IP"] = new Microsoft.Extensions.Primitives.StringValues(["1.1.1.1", "2.2.2.2"]);
+        Assert.Equal("10.1.2.3", AddAccion.Auth.Hosting.ClientAddress.Resolve(ctx, "CF-Connecting-IP"));
+    }
+}

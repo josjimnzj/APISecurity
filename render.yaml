@@ -1,0 +1,34 @@
+# Render Blueprint — AddACCION Auth.
+# Dashboard > New > Blueprint > select this repository. Render asks for every "sync: false" value once.
+# Full guide (variables, keys, database, custom domain): docs/despliegue-render.md
+services:
+  - type: web
+    name: addaccion-auth
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    region: frankfurt            # closest Render region to Spain
+    plan: starter                # free plan sleeps after inactivity and has no pre-deploy command
+    healthCheckPath: /health/ready
+    autoDeploy: true
+    # Schema migrations. Disabled on purpose: they need DDL rights, and enabling this puts a privileged
+    # connection string in the runtime environment. Run "migrate" from a trusted machine instead
+    # (docs/despliegue-render.md, step 2), or uncomment and add ConnectionStrings__AuthDbMigrations.
+    # preDeployCommand: /app/AddAccion.Auth migrate
+    envVars:
+      # --- required, entered once in the dashboard -----------------------------------
+      - key: ConnectionStrings__AuthDb
+        sync: false              # SQL Server, least-privilege login, Encrypt=True
+      - key: Auth__Issuer
+        sync: false              # https://addaccion-auth.onrender.com or https://auth.addaccion.com (final, never change)
+      - key: Auth__SigningKeys__Inline__0
+        sync: false              # output of: docker run --rm <image> generate-key --type ec --base64
+      # --- generated / fixed -------------------------------------------------------------
+      - key: Auth__Login__CsrfKey
+        generateValue: true      # base64 256-bit, shared by all instances
+      - key: Auth__SigningKeys__ActiveKey
+        value: inline-0
+      - key: Auth__Proxy__TrustAllProxies
+        value: "true"            # TLS ends at Render's load balancer; trust its X-Forwarded-Proto
+      - key: Auth__Proxy__ClientIpHeader
+        value: CF-Connecting-IP  # real client IP for rate limiting and audit logs
