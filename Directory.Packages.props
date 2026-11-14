@@ -5,7 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Runtime -->
-    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.1" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.2" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
     <!-- Transitive pins: patched versions (NuGet audit) -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
